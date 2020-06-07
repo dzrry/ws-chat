@@ -5,7 +5,7 @@ import (
 	"log"
 	"net"
 
-	"chat"
+	"github.com/dzrry/ws-chat/src/chat"
 )
 
 func run(port int) {

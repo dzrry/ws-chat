@@ -15,7 +15,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"chat"
+	"github.com/dzrry/ws-chat/src/chat"
 )
 
 const (

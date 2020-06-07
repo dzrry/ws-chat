@@ -1,6 +1,3 @@
-**/-*
-\#*
-local.properties.*
-src/github.com/*
-pkg/
-bin/
+.idea/
+.DS_Store
+wsserver
