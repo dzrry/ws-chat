@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"github.com/dzrry/ws-chat/internal"
 	"html/template"
 	"log"
 	"net"
@@ -14,8 +15,6 @@ import (
 	//"bufio"
 
 	"github.com/gorilla/websocket"
-
-	"github.com/dzrry/ws-chat/src/chat"
 )
 
 const (
@@ -23,7 +22,7 @@ const (
 )
 
 func getTemplateFilePath(tn string) string {
-	return "private/template/" + tn
+	return "internal/template/" + tn
 }
 
 func sendPageData(w http.ResponseWriter, pageDataBytes []byte, contextType string) error {
@@ -274,11 +273,11 @@ func createSocketServer(port int) {
 	}
 }
 
-var chatServer *chat.Server
+var chatServer *internal.Server
 
 func main() {
 
-	chatServer = chat.CreateChatServer()
+	chatServer = internal.CreateChatServer()
 
 	go createSocketServer(9981)
 
