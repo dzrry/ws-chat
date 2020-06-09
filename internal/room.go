@@ -20,7 +20,7 @@ type Room struct {
 	VisitorEnterRequests chan *Visitor
 }
 
-func (s *Server) createNewRoom(id string) *Room {
+func (s *Server) newRoom(id string) *Room {
 	room := &Room{
 		Server: s,
 

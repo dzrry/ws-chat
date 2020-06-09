@@ -45,7 +45,7 @@ func (s *Server) run() {
 	rand.Seed(time.Now().UTC().UnixNano())
 
 	s.Rooms = make(map[string]*Room)
-	s.Lobby = s.createNewRoom(LobbyRoomID)
+	s.Lobby = s.newRoom(LobbyRoomID)
 	s.Visitors = make(map[string]*Visitor)
 	s.ToExit = make(chan int, 1)
 
@@ -82,7 +82,7 @@ func (s *Server) run() {
 				default:
 					room := server.Rooms[strings.ToLower(visitor.NextRoomID)]
 					if room == nil {
-						room = server.createNewRoom(visitor.NextRoomID)
+						room = server.newRoom(visitor.NextRoomID)
 						go room.run()
 					}
 					room.VisitorEnterRequests <- visitor

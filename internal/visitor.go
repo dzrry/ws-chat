@@ -133,7 +133,7 @@ func (v *Visitor) run() {
 	<-v.ReadClosed
 	close(v.Closed)
 
-	// let server close v
+	// let server close visitor
 	v.beginChangingRoom(VoidRoomID)
 }
 
@@ -152,7 +152,7 @@ func (v *Visitor) read() {
 			close(v.ReadClosed)
 		default:
 		}
-		// wait server change room for v, when server has done it, this channel will be closed.
+		// wait server change room for visitor, when server has done it, this channel will be closed.
 		<-v.RoomChanged
 
 		line, err := v.Input.ReadString('\n')
