@@ -24,44 +24,44 @@ type Server struct {
 	RegexpBraces *regexp.Regexp
 }
 
-func (server *Server) CreateMessage(who string, what string) string {
+func (s *Server) CreateMessage(who string, what string) string {
 	return fmt.Sprintf("[%s] %s> %s\n", time.Now().Local().Format("15:04:05"), who, what)
 }
 
-func (server *Server) NormalizeName(name string) string {
-	return server.RegexpBraces.ReplaceAllString(name, "")
+func (s *Server) NormalizeName(name string) string {
+	return s.RegexpBraces.ReplaceAllString(name, "")
 }
 
-func (server *Server) CreateRandomVisitorName() string {
+func (s *Server) CreateRandomVisitorName() string {
 	for {
 		name := fmt.Sprintf("visitor_%d", 10000+rand.Intn(9990000))
-		if server.Visitors[strings.ToLower(name)] == nil {
+		if s.Visitors[strings.ToLower(name)] == nil {
 			return name
 		}
 	}
 }
 
-func (server *Server) run() {
+func (s *Server) run() {
 	rand.Seed(time.Now().UTC().UnixNano())
 
-	server.Rooms = make(map[string]*Room)
-	server.Lobby = server.createNewRoom(LobbyRoomID)
-	server.Visitors = make(map[string]*Visitor)
-	server.ToExit = make(chan int, 1)
+	s.Rooms = make(map[string]*Room)
+	s.Lobby = s.createNewRoom(LobbyRoomID)
+	s.Visitors = make(map[string]*Visitor)
+	s.ToExit = make(chan int, 1)
 
-	server.PendingConnections = make(chan net.Conn, MaxPendingConnections)
-	server.ChangeRoomRequests = make(chan *Visitor, MaxBufferedChangeRoomRequests)
-	server.ChangeNameRequests = make(chan *Visitor, MaxBufferedChangeNameRequests)
+	s.PendingConnections = make(chan net.Conn, MaxPendingConnections)
+	s.ChangeRoomRequests = make(chan *Visitor, MaxBufferedChangeRoomRequests)
+	s.ChangeNameRequests = make(chan *Visitor, MaxBufferedChangeNameRequests)
 
-	server.RegexpBraces = regexp.MustCompile("[{}]")
+	s.RegexpBraces = regexp.MustCompile("[{}]")
 
-	go server.Lobby.run()
+	go s.Lobby.run()
 
 	go func(server *Server) {
 		for {
 			select {
 			case conn := <-server.PendingConnections:
-				visitor := server.createNewVisitor(conn, server.CreateRandomVisitorName())
+				visitor := server.newVisitor(conn, server.CreateRandomVisitorName())
 				if visitor != nil {
 					visitor.OutputMessages <- server.CreateMessage(
 						"Server",
@@ -89,13 +89,13 @@ func (server *Server) run() {
 				}
 			}
 		}
-	}(server)
+	}(s)
 
-	<-server.ToExit
+	<-s.ToExit
 }
 
-func (server *Server) OnNewConnection(conn net.Conn) {
-	server.PendingConnections <- conn
+func (s *Server) OnNewConnection(conn net.Conn) {
+	s.PendingConnections <- conn
 }
 
 func CreateChatServer() (server *Server) {

@@ -76,30 +76,21 @@ func (cc *ChatConn) ReadFromBuffer(b []byte, from int) int {
 }
 
 func (cc *ChatConn) MergeOutputBuffer(newb []byte) []byte {
-	var old_n = cc.OutputBuffer.Len()
+	old_n := cc.OutputBuffer.Len()
 	if old_n == 0 {
 		return newb
 	}
 
-	var new_n = len(newb)
-	var all_n = old_n + new_n
-	var all_b = make([]byte, all_n)
+	new_n := len(newb)
+	all_n := old_n + new_n
+	all_b := make([]byte, all_n)
 	cc.OutputBuffer.Read(all_b)
-	//var to = old_n
-	//var from = 0
-	//for from < new_n {
-	//	all_b[to] = newb[from]
-	//  from++
-	//  to++
-	//}
 	copy(all_b[old_n:], newb)
 
 	return all_b
 }
 
-//====================================================================
-//>>>>>>>>>>>>>>>> implement net.Conn interface
-
+// implement net.Conn interface
 func (cc *ChatConn) Read(b []byte) (int, error) {
 	from := cc.ReadFromBuffer(b, 0)
 	if from == len(b) {
@@ -107,7 +98,7 @@ func (cc *ChatConn) Read(b []byte) (int, error) {
 	}
 
 	messageType, p, err := cc.Conn.ReadMessage()
-	if err != nil || messageType != websocket.TextMessage { // only TextMessage is suppported now
+	if err != nil || messageType != websocket.TextMessage {
 		return from, err
 	}
 
@@ -128,15 +119,13 @@ func (cc *ChatConn) Read(b []byte) (int, error) {
 func (cc *ChatConn) Write(newb []byte) (int, error) {
 	b := cc.MergeOutputBuffer(newb)
 
-	var n = len(b)
-	var from = 0
-	var to = 0
-	var err error
+	n := len(b)
+	var from int
+	var to int
 	for to < n {
 		if b[to] == '\n' {
 			if to-from > 0 {
-				err = cc.Conn.WriteMessage(websocket.TextMessage, b[from:to+1])
-				if err != nil {
+				if err := cc.Conn.WriteMessage(websocket.TextMessage, b[from:to+1]); err != nil {
 					break
 				}
 			}
@@ -150,9 +139,6 @@ func (cc *ChatConn) Write(newb []byte) (int, error) {
 	if from < n {
 		cc.OutputBuffer.Write(b[from:])
 	}
-
-	//if (cc.OutputBuffer.Len() > MaxBufferOutputBytes)
-	//  err = error.New ("...")
 
 	return len(newb), nil
 }
@@ -184,9 +170,7 @@ func (cc *ChatConn) SetWriteDeadline(t time.Time) error {
 	return cc.Conn.SetWriteDeadline(t)
 }
 
-//<<<<<<<<<<<<<<<<<<<< implement net.Conn interface
-//====================================================================
-
+// implement net.Conn interface
 var wsUpgrader = websocket.Upgrader{
 	ReadBufferSize:  512,
 	WriteBufferSize: 512,

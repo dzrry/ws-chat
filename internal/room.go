@@ -13,18 +13,16 @@ type Room struct {
 	ID   string
 	Name string
 
-	Visitors *list.List // go list is not fun
+	Visitors *list.List
 	Messages chan string
 
 	VisitorLeaveRequests chan *Visitor
 	VisitorEnterRequests chan *Visitor
-
-	//Closed   chan int // todo: when number visitors is 0, close room
 }
 
-func (server *Server) createNewRoom(id string) *Room {
-	var room = &Room{
-		Server: server,
+func (s *Server) createNewRoom(id string) *Room {
+	room := &Room{
+		Server: s,
 
 		ID: id,
 
@@ -41,75 +39,67 @@ func (server *Server) createNewRoom(id string) *Room {
 		room.Name = fmt.Sprintf("Room#%s", id)
 	}
 
-	server.Rooms[strings.ToLower(id)] = room
+	s.Rooms[strings.ToLower(id)] = room
 
 	log.Printf("New room: %s", id)
 
 	return room
 }
 
-func (room *Room) enterVisitor(visitor *Visitor) {
-	if visitor.RoomElement != nil || visitor.CurrentRoom != nil {
-		log.Printf("EnterVisitor: visitor has already entered a room")
+func (r *Room) enterVisitor(v *Visitor) {
+	if v.RoomElement != nil || v.CurrentRoom != nil {
+		log.Printf("EnterVisitor: v has already entered a r")
 	}
 
-	visitor.CurrentRoom = room
-	visitor.RoomElement = room.Visitors.PushBack(visitor)
+	v.CurrentRoom = r
+	v.RoomElement = r.Visitors.PushBack(v)
 }
 
-func (room *Room) leaveVisitor(visitor *Visitor) {
-	if visitor.RoomElement == nil || visitor.CurrentRoom == nil {
+func (r *Room) leaveVisitor(v *Visitor) {
+	if v.RoomElement == nil || v.CurrentRoom == nil {
 		log.Printf("LeaveVisitor: visitor has not entered any room yet")
 		return
 	}
-	if visitor.CurrentRoom != room {
+	if v.CurrentRoom != r {
 		log.Printf("LeaveVisitor: visitor.CurrentRoom != room")
 		return
 	}
 
-	if visitor != room.Visitors.Remove(visitor.RoomElement) {
+	if v != r.Visitors.Remove(v.RoomElement) {
 		log.Printf("LeaveVisitor: visitor != element.value")
 		return
 	}
 
-	visitor.RoomElement = nil
-	visitor.CurrentRoom = nil
+	v.RoomElement = nil
+	v.CurrentRoom = nil
 }
 
-func (room *Room) run() {
-	var server = room.Server
-	var visitor *Visitor
-	var message string
-	var ok bool
+func (r *Room) run() {
+	server := r.Server
 
 	for {
 		select {
-		case visitor = <-room.VisitorLeaveRequests:
-			//if (visitor.CurrentRoom == room) {
-			room.leaveVisitor(visitor)
-			visitor.OutputMessages <- server.CreateMessage(room.Name, "<= you leaved this room.")
-			//room.Messages <- server.CreateMessage (room.Name, fmt.Sprintf ("<= visitor#%s leaved this room.", visitor.Name))
-			//}
+		case visitor := <-r.VisitorLeaveRequests:
+			r.leaveVisitor(visitor)
+			visitor.OutputMessages <- server.CreateMessage(r.Name, "<= you leaved this room.")
 			server.ChangeRoomRequests <- visitor
-		case visitor = <-room.VisitorEnterRequests:
-			//if (visitor.CurrentRoom == room) {
-			if room.Visitors.Len() >= MaxRoomCapacity {
-				visitor.OutputMessages <- server.CreateMessage(room.Name, "Sorry, I am full. :(")
+		case visitor := <-r.VisitorEnterRequests:
+			if r.Visitors.Len() >= MaxRoomCapacity {
+				visitor.OutputMessages <- server.CreateMessage(r.Name, "Sorry, I am full. :(")
 			} else {
-				room.enterVisitor(visitor)
-				visitor.OutputMessages <- server.CreateMessage(room.Name, "<= you entered this room.")
-				//room.Messages <- server.CreateMessage (room.Name, fmt.Sprintf ("<= visitor#%s entered this room.", visitor.Name))
+				r.enterVisitor(visitor)
+				visitor.OutputMessages <- server.CreateMessage(r.Name, "<= you entered this room.")
+				//r.Messages <- server.CreateMessage (r.Name, fmt.Sprintf ("<= visitor#%s entered this room.", visitor.Name))
 			}
 			visitor.endChangingRoom()
-			//}
-		case message = <-room.Messages:
-			for e := room.Visitors.Front(); e != nil; e = e.Next() {
-				visitor, ok = e.Value.(*Visitor)
+
+		case message := <-r.Messages:
+			for e := r.Visitors.Front(); e != nil; e = e.Next() {
+				visitor, ok := e.Value.(*Visitor)
 				if ok {
 					visitor.OutputMessages <- message
 				}
 			}
 		}
 	}
-
 }

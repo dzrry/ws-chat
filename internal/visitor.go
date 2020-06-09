@@ -22,7 +22,8 @@ type Visitor struct {
 	Name     string
 	NextName string
 
-	RoomElement *list.Element // in CurrentRoom.Visitors
+	// in CurrentRoom.Visitors
+	RoomElement *list.Element
 	CurrentRoom *Room
 	NextRoomID  string
 	RoomChanged chan int
@@ -32,9 +33,9 @@ type Visitor struct {
 	Closed      chan int
 }
 
-func (server *Server) createNewVisitor(c net.Conn, name string) *Visitor {
-	var visitor = &Visitor{
-		Server: server,
+func (s *Server) newVisitor(c net.Conn, name string) *Visitor {
+	visitor := &Visitor{
+		Server: s,
 
 		Connection:     c,
 		OutputMessages: make(chan string, MaxVisitorBufferedMessages),
@@ -56,7 +57,7 @@ func (server *Server) createNewVisitor(c net.Conn, name string) *Visitor {
 	visitor.Input = bufio.NewReader(visitor.LimitInput)
 	visitor.Output = bufio.NewWriter(c)
 
-	server.Visitors[strings.ToLower(name)] = visitor
+	s.Visitors[strings.ToLower(name)] = visitor
 
 	visitor.beginChangingRoom(LobbyRoomID)
 
@@ -65,10 +66,10 @@ func (server *Server) createNewVisitor(c net.Conn, name string) *Visitor {
 	return visitor
 }
 
-func (visitor *Visitor) changeName() {
-	var server = visitor.Server
+func (v *Visitor) changeName() {
+	server := v.Server
 
-	var newName = visitor.NextName
+	newName := v.NextName
 
 	rn := []rune(newName)
 	if len(rn) < MinVisitorNameLength {
@@ -89,176 +90,170 @@ func (visitor *Visitor) changeName() {
 		return
 	}
 
-	delete(server.Visitors, strings.ToLower(visitor.Name))
-	visitor.Name = newName
-	server.Visitors[strings.ToLower(visitor.Name)] = visitor
+	delete(server.Visitors, strings.ToLower(v.Name))
+	v.Name = newName
+	server.Visitors[strings.ToLower(v.Name)] = v
 
-	visitor.OutputMessages <- server.CreateMessage("Server", fmt.Sprintf("you changed your name to %s", visitor.Name))
+	v.OutputMessages <- server.CreateMessage(
+		"Server",
+		fmt.Sprintf("you changed your name to %s", v.Name))
 }
 
-func (server *Server) destroyVisitor(visitor *Visitor) {
-	if visitor.CurrentRoom != nil {
-		log.Printf("destroyVisitor: visitor.CurrentRoom != nil")
+func (s *Server) destroyVisitor(v *Visitor) {
+	if v.CurrentRoom != nil {
+		log.Printf("destroyVisitor: v.CurrentRoom != nil")
 	}
 
-	delete(server.Visitors, strings.ToLower(visitor.Name))
+	delete(s.Visitors, strings.ToLower(v.Name))
 
-	visitor.closeConnection()
+	v.closeConnection()
 }
 
-func (visitor *Visitor) closeConnection() error {
-	//defer func() {
-	//    if err := recover(); err != nil {
-	//        log.Println ("CloseConnection paniced", err)
-	//    }
-	//}()
-	// above is to avoid panic on reclose a connection. It may be not essential.
-
-	return visitor.Connection.Close()
+func (v *Visitor) closeConnection() error {
+	return v.Connection.Close()
 }
 
-func (visitor *Visitor) beginChangingRoom(newRoomID string) {
-	visitor.RoomChanged = make(chan int) // to block Visitor. Read before room is changed.
-	visitor.NextRoomID = newRoomID
-	visitor.Server.ChangeRoomRequests <- visitor
+func (v *Visitor) beginChangingRoom(newRoomID string) {
+	// to block Visitor. Read before room is changed.
+	v.RoomChanged = make(chan int)
+	v.NextRoomID = newRoomID
+	v.Server.ChangeRoomRequests <- v
 }
 
-func (visitor *Visitor) endChangingRoom() {
-	visitor.NextRoomID = VoidRoomID
-	close(visitor.RoomChanged)
+func (v *Visitor) endChangingRoom() {
+	v.NextRoomID = VoidRoomID
+	close(v.RoomChanged)
 }
 
-func (visitor *Visitor) run() {
-	go visitor.read()
-	go visitor.write()
+func (v *Visitor) run() {
+	go v.read()
+	go v.write()
 
-	<-visitor.WriteClosed
-	<-visitor.ReadClosed
-	close(visitor.Closed)
+	<-v.WriteClosed
+	<-v.ReadClosed
+	close(v.Closed)
 
-	// let server close visitor
-	visitor.beginChangingRoom(VoidRoomID)
+	// let server close v
+	v.beginChangingRoom(VoidRoomID)
 }
 
-func (visitor *Visitor) read() {
-	var server = visitor.Server
+func (v *Visitor) read() {
+	server := v.Server
 
-	var MaxNumBytesPerMessage int64 = (MaxMessageLength << 2) + 1
-	visitor.LimitInput.N = MaxNumBytesPerMessage
-	var inReadingLongMessage bool = false
+	maxNumBytesPerMessage := (MaxMessageLength << 2) + 1
+	v.LimitInput.N = int64(maxNumBytesPerMessage)
+	inReadingLongMessage := false
 
 	for {
 		select {
-		case <-visitor.WriteClosed:
-			close(visitor.ReadClosed)
-		case <-visitor.Closed:
-			close(visitor.ReadClosed)
+		case <-v.WriteClosed:
+			close(v.ReadClosed)
+		case <-v.Closed:
+			close(v.ReadClosed)
 		default:
 		}
+		// wait server change room for v, when server has done it, this channel will be closed.
+		<-v.RoomChanged
 
-		<-visitor.RoomChanged // wait server change room for vistor, when server has done it, this channel will be closed.
-
-		var line, err = visitor.Input.ReadString('\n') // todo: use io.LimitedReader insstead
+		line, err := v.Input.ReadString('\n')
 		if err != nil {
 			if err != io.EOF || line == "" {
-				close(visitor.ReadClosed)
+				close(v.ReadClosed)
 			}
 		}
 
-		visitor.LimitInput.N = int64(len(line)) + visitor.LimitInput.N
+		v.LimitInput.N = int64(len(line)) + v.LimitInput.N
 
 		rn := []rune(line)
-		if len(rn) > MaxMessageLength || len(rn) == MaxMessageLength && line[len(line)-1] != '\n' {
+		switch {
+		case len(rn) > MaxMessageLength || len(rn) == MaxMessageLength && line[len(line)-1] != '\n':
 			if !inReadingLongMessage {
-				visitor.OutputMessages <- server.CreateMessage("Server", "your message is too long!")
+				v.OutputMessages <- server.CreateMessage("Server", "your message is too long!")
 			}
 			inReadingLongMessage = line[len(line)-1] != '\n'
 			continue
-		} else if inReadingLongMessage {
+		case inReadingLongMessage:
 			inReadingLongMessage = false
 			continue
 		}
-
+		
 		if strings.HasPrefix(line, "/") {
-			if strings.HasPrefix(line, "/exit") {
-				close(visitor.ReadClosed)
-			} else if strings.HasPrefix(line, "/room") {
+			switch {
+			case strings.HasPrefix(line, "/exit"):
+				close(v.ReadClosed)
+			case strings.HasPrefix(line, "/room"):
 				line = strings.TrimPrefix(line, "/room")
 				line = strings.TrimSpace(line)
 				if len(line) == 0 { // show current room name
-					if visitor.CurrentRoom == nil {
-						visitor.OutputMessages <- server.CreateMessage("Server", "you are in lobby now")
+					if v.CurrentRoom == nil {
+						v.OutputMessages <- server.CreateMessage("Server", "you are in lobby now")
 					} else {
-						visitor.OutputMessages <- server.CreateMessage("Server", fmt.Sprintf("your are in %s now}", visitor.CurrentRoom.Name))
+						v.OutputMessages <- server.CreateMessage(
+							"Server",
+							fmt.Sprintf("your are in %s now", v.CurrentRoom.Name))
 					}
-				} else { // change room,
+				} else { // change room
 					line = server.NormalizeName(line)
 
-					visitor.beginChangingRoom(line)
+					v.beginChangingRoom(line)
 				}
-
 				continue
-			} else if strings.HasPrefix(line, "/name") {
+			case strings.HasPrefix(line, "/name"):
 				line = strings.TrimPrefix(line, "/name")
 				line = strings.TrimSpace(line)
 
 				if len(line) == 0 {
-					visitor.OutputMessages <- server.CreateMessage("Server", fmt.Sprintf("your name is %s}", visitor.Name))
+					v.OutputMessages <- server.CreateMessage(
+						"Server",
+						fmt.Sprintf("your name is %s", v.Name))
 				} else if len(line) >= MinVisitorNameLength && len(line) <= MaxVisitorNameLength {
-					visitor.NextName = line
-					server.ChangeNameRequests <- visitor
+					v.NextName = line
+					server.ChangeNameRequests <- v
 				}
-
 				continue
 			}
 		}
 
-		if visitor.CurrentRoom != nil {
-			if visitor.CurrentRoom == server.Lobby {
-				visitor.OutputMessages <- server.CreateMessage("Server", "you are current in lobby, please input /room room_name to enter a room")
+		if v.CurrentRoom != nil {
+			if v.CurrentRoom == server.Lobby {
+				v.OutputMessages <- server.CreateMessage(
+					"Server",
+					"you are current in lobby, please input /room room_name to enter a room")
 			} else {
-				visitor.CurrentRoom.Messages <- server.CreateMessage(visitor.Name, line)
+				v.CurrentRoom.Messages <- server.CreateMessage(v.Name, line)
 			}
 		}
 	}
 }
 
-func (visitor *Visitor) write() {
+func (v *Visitor) write() {
 	for {
 		select {
-		case <-visitor.ReadClosed:
-			visitor.closeConnection() // to avoud read blocking
-
-			close(visitor.WriteClosed)
-		case <-visitor.Closed:
-			visitor.closeConnection() // to avoud read blocking
-
-			close(visitor.WriteClosed)
-		case message := <-visitor.OutputMessages:
-			num, err := visitor.Output.WriteString(message)
-			_ = num
+		case <-v.ReadClosed:
+			v.closeConnection()
+			close(v.WriteClosed)
+		case <-v.Closed:
+			v.closeConnection()
+			close(v.WriteClosed)
+		case message := <-v.OutputMessages:
+			_, err := v.Output.WriteString(message)
 			if err != nil {
-				visitor.closeConnection() // to avoud read blocking
-
-				close(visitor.WriteClosed)
+				v.closeConnection()
+				close(v.WriteClosed)
 			}
 
 			for {
 				select {
-				case message = <-visitor.OutputMessages:
-					num, err = visitor.Output.WriteString(message)
-					_ = num
+				case message = <-v.OutputMessages:
+					_, err = v.Output.WriteString(message)
 					if err != nil {
-						visitor.closeConnection() // to avoud read blocking
-
-						close(visitor.WriteClosed)
+						v.closeConnection()
+						close(v.WriteClosed)
 					}
 				default:
-					if visitor.Output.Flush() != nil {
-
-						visitor.closeConnection() // to avoud read blocking
-
-						close(visitor.WriteClosed)
+					if v.Output.Flush() != nil {
+						v.closeConnection()
+						close(v.WriteClosed)
 					}
 				}
 			}
