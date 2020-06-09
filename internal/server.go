@@ -34,7 +34,7 @@ func (server *Server) NormalizeName(name string) string {
 
 func (server *Server) CreateRandomVisitorName() string {
 	for {
-		var name = fmt.Sprintf("visitor_%d", 10000+rand.Intn(9990000))
+		name := fmt.Sprintf("visitor_%d", 10000+rand.Intn(9990000))
 		if server.Visitors[strings.ToLower(name)] == nil {
 			return name
 		}
@@ -42,7 +42,6 @@ func (server *Server) CreateRandomVisitorName() string {
 }
 
 func (server *Server) run() {
-
 	rand.Seed(time.Now().UTC().UnixNano())
 
 	server.Rooms = make(map[string]*Room)
@@ -62,30 +61,32 @@ func (server *Server) run() {
 		for {
 			select {
 			case conn := <-server.PendingConnections:
-				var visitor = server.createNewVisitor(conn, server.CreateRandomVisitorName())
+				visitor := server.createNewVisitor(conn, server.CreateRandomVisitorName())
 				if visitor != nil {
-					visitor.OutputMessages <- server.CreateMessage("Server", fmt.Sprintf("your name: %s. You can input /name new_name to change your name.", visitor.Name))
+					visitor.OutputMessages <- server.CreateMessage(
+						"Server",
+						fmt.Sprintf("your name: %s. You can input /name new_name to change your name.",
+							visitor.Name))
 					go visitor.run()
 				}
 			case visitor := <-server.ChangeNameRequests:
 				visitor.changeName()
 			case visitor := <-server.ChangeRoomRequests:
-				if visitor.CurrentRoom != nil { // &&  visitor.RoomElement != nil
+				switch {
+				case visitor.CurrentRoom != nil:
 					visitor.CurrentRoom.VisitorLeaveRequests <- visitor
-				} else if visitor.NextRoomID == VoidRoomID {
+				case visitor.NextRoomID == VoidRoomID:
 					visitor.endChangingRoom()
 					log.Printf("Destroy visitor: %s", visitor.Name)
 					server.destroyVisitor(visitor)
-				} else {
-					var room = server.Rooms[strings.ToLower(visitor.NextRoomID)]
+				default:
+					room := server.Rooms[strings.ToLower(visitor.NextRoomID)]
 					if room == nil {
 						room = server.createNewRoom(visitor.NextRoomID)
 						go room.run()
 					}
-
 					room.VisitorEnterRequests <- visitor
 				}
-				//case room := <- server.RoomCloseRequests:
 			}
 		}
 	}(server)
@@ -97,9 +98,8 @@ func (server *Server) OnNewConnection(conn net.Conn) {
 	server.PendingConnections <- conn
 }
 
-func CreateChatServer() *Server {
-	var server = new(Server)
+func CreateChatServer() (server *Server) {
+	server = &Server{}
 	go server.run()
-
 	return server
 }

@@ -149,12 +149,10 @@ func (visitor *Visitor) read() {
 
 	for {
 		select {
-		//case <- visitor.ReadClosed:
-		//   goto EXIT
 		case <-visitor.WriteClosed:
-			goto EXIT
+			close(visitor.ReadClosed)
 		case <-visitor.Closed:
-			goto EXIT
+			close(visitor.ReadClosed)
 		default:
 		}
 
@@ -163,7 +161,7 @@ func (visitor *Visitor) read() {
 		var line, err = visitor.Input.ReadString('\n') // todo: use io.LimitedReader insstead
 		if err != nil {
 			if err != io.EOF || line == "" {
-				goto EXIT
+				close(visitor.ReadClosed)
 			}
 		}
 
@@ -183,7 +181,7 @@ func (visitor *Visitor) read() {
 
 		if strings.HasPrefix(line, "/") {
 			if strings.HasPrefix(line, "/exit") {
-				goto EXIT
+				close(visitor.ReadClosed)
 			} else if strings.HasPrefix(line, "/room") {
 				line = strings.TrimPrefix(line, "/room")
 				line = strings.TrimSpace(line)
@@ -223,26 +221,26 @@ func (visitor *Visitor) read() {
 			}
 		}
 	}
-
-EXIT:
-
-	close(visitor.ReadClosed)
 }
 
 func (visitor *Visitor) write() {
 	for {
 		select {
 		case <-visitor.ReadClosed:
-			goto EXIT
-		//case <- visitor.WriteClosed:
-		//   goto EXIT
+			visitor.closeConnection() // to avoud read blocking
+
+			close(visitor.WriteClosed)
 		case <-visitor.Closed:
-			goto EXIT
+			visitor.closeConnection() // to avoud read blocking
+
+			close(visitor.WriteClosed)
 		case message := <-visitor.OutputMessages:
 			num, err := visitor.Output.WriteString(message)
 			_ = num
 			if err != nil {
-				goto EXIT
+				visitor.closeConnection() // to avoud read blocking
+
+				close(visitor.WriteClosed)
 			}
 
 			for {
@@ -251,24 +249,19 @@ func (visitor *Visitor) write() {
 					num, err = visitor.Output.WriteString(message)
 					_ = num
 					if err != nil {
-						goto EXIT
+						visitor.closeConnection() // to avoud read blocking
+
+						close(visitor.WriteClosed)
 					}
 				default:
-					goto FLUSH
+					if visitor.Output.Flush() != nil {
+
+						visitor.closeConnection() // to avoud read blocking
+
+						close(visitor.WriteClosed)
+					}
 				}
-			}
-
-		FLUSH:
-
-			if visitor.Output.Flush() != nil {
-				goto EXIT
 			}
 		}
 	}
-
-EXIT:
-
-	visitor.closeConnection() // to avoud read blocking
-
-	close(visitor.WriteClosed)
 }
